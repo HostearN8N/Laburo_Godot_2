@@ -1,7 +1,7 @@
 extends VehicleBody3D
 
 const MAX_STEER = 0.5
-const ENGINE_POWER = 7500.0
+const ENGINE_POWER = 8500.0
 
 
 const GEAR_MAX_SPEED: Array[float] = [50.0, 85.0, 125.0, 165.0, 200.0]  # km/h máx. de 1ª a 5ª
