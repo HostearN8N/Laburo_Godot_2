@@ -20,30 +20,42 @@ var target_look_at: Vector3 = Vector3.ZERO
 var current_gear := 1     # -1 = reversa, 1 a 5 = marchas
 var speed_kmh := 0.0
 var shift_timer := 0.0
-
+var puede_conducir := true
+@onready var meta: Area3D = $"../LineaMeta"
 func _ready() -> void:
+	add_to_group("jugador")
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	target_look_at = global_position
+	meta.carrera_terminada.connect(_on_carrera_terminada)
+
+func _on_carrera_terminada() -> void:
+	puede_conducir = false
 
 func _physics_process(delta: float) -> void:
-	
-	steering = move_toward(steering, Input.get_axis("ui_right", "ui_left") * MAX_STEER, delta * 2.5)
-	
-	var throttle := Input.get_axis("ui_down", "ui_up")
-	_update_gearbox(delta, throttle)
-	engine_force = _get_engine_force(throttle)
+	if puede_conducir:
+		steering = move_toward(steering, Input.get_axis("ui_right", "ui_left") * MAX_STEER, delta * 2.5)
 
-	# Freno: se activa si la tecla va contra el sentido de marcha
-	var braking := (current_gear > 0 and throttle < 0.0) or (current_gear == -1 and throttle > 0.0)
-	brake = BRAKE_POWER if braking else 0.0
-	
+		var throttle := Input.get_axis("ui_down", "ui_up")
+		_update_gearbox(delta, throttle)
+		engine_force = _get_engine_force(throttle)
+
+		# Freno: se activa si la tecla va contra el sentido de marcha
+		var braking := (current_gear > 0 and throttle < 0.0) or (current_gear == -1 and throttle > 0.0)
+		brake = BRAKE_POWER if braking else 0.0
+	else:
+		# Carrera terminada: sin control, el auto frena solo y las ruedas se centran
+		speed_kmh = linear_velocity.length() * 3.6
+		engine_force = 0.0
+		brake = BRAKE_POWER * 0.5
+		steering = move_toward(steering, 0.0, delta * 2.5)
+
 	camera_pivot.global_position = camera_pivot.global_position.lerp(global_position, delta * 20.0)
 	camera_pivot.transform = camera_pivot.transform.interpolate_with(transform, delta * 5.0)
-	
+
 	target_look_at = target_look_at.lerp(global_position + linear_velocity, delta * 5.0)
 	camera_3d.look_at(target_look_at)
 	reverse_camera.look_at(target_look_at)
-	
+
 	_check_camera_switch()
 
 func _update_gearbox(delta: float, throttle: float) -> void:
