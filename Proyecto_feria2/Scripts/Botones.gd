@@ -40,3 +40,6 @@ func _on_focus_exited() -> void:
 	
 	# 2. Recupera su opacidad sólida
 	tween.tween_property(barra, "modulate:a", 1.0, anim_duration)
+	
+	
+	
