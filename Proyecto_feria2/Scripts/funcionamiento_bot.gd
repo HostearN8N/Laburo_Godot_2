@@ -205,6 +205,7 @@ var debug_timer: float = 0.0
 # =========================================
 
 var own_collision_rids: Array[RID] = []
+var puede_conducir: bool = false
 
 
 # =========================================
@@ -212,6 +213,7 @@ var own_collision_rids: Array[RID] = []
 # =========================================
 
 func _ready() -> void:
+	add_to_group("bots")
 
 	if path_follow == null:
 		push_error("AI: No se asigno PathFollow3D.")
@@ -231,6 +233,9 @@ func _ready() -> void:
 
 	if not body_entered.is_connected(_on_body_entered):
 		body_entered.connect(_on_body_entered)
+		
+	# Congela las físicas al iniciar para que no resbale en la inclinación de la pista
+	freeze = true
 
 
 func _capture_starting_grid_offset(path: Path3D, curve: Curve3D) -> void:
@@ -254,354 +259,366 @@ func _capture_starting_grid_offset(path: Path3D, curve: Curve3D) -> void:
 
 func _physics_process(delta: float) -> void:
 
-	# 1. Validar referencia al circuito.
+	if puede_conducir:
+		# Si estaba congelado esperando el semáforo, lo liberamos al habilitar los controles
+		if freeze:
+			freeze = false
 
-	var path: Path3D = null
+		# 1. Validar referencia al circuito.
 
-	if is_instance_valid(path_follow):
-		path = path_follow.get_parent() as Path3D
+		var path: Path3D = null
 
-	if path == null or path.curve == null:
-		debug_state = "SIN_PATH"
-		_apply_drive_output(0.0, brake_power, delta)
-		return
+		if is_instance_valid(path_follow):
+			path = path_follow.get_parent() as Path3D
 
-	var curve: Curve3D = path.curve
-	var path_length: float = curve.get_baked_length()
+		if path == null or path.curve == null:
+			debug_state = "SIN_PATH"
+			_apply_drive_output(0.0, brake_power, delta)
+			return
 
-	if path_length <= 0.0:
-		debug_state = "PATH_VACIO"
-		_apply_drive_output(0.0, brake_power, delta)
-		return
+		var curve: Curve3D = path.curve
+		var path_length: float = curve.get_baked_length()
 
-	if not grid_offset_captured:
-		_capture_starting_grid_offset(path, curve)
+		if path_length <= 0.0:
+			debug_state = "PATH_VACIO"
+			_apply_drive_output(0.0, brake_power, delta)
+			return
 
+		if not grid_offset_captured:
+			_capture_starting_grid_offset(path, curve)
 
-	# 2. Calcular velocidad.
 
-	var forward_direction: Vector3 = global_transform.basis.z.normalized()
-	var forward_speed: float = linear_velocity.dot(forward_direction)
-	var speed_kmh: float = absf(forward_speed) * 3.6
+		# 2. Calcular velocidad.
 
+		var forward_direction: Vector3 = global_transform.basis.z.normalized()
+		var forward_speed: float = linear_velocity.dot(forward_direction)
+		var speed_kmh: float = absf(forward_speed) * 3.6
 
-	# 3. Tiempo y distancia desde la salida.
 
-	race_elapsed += delta
-	distance_since_launch += maxf(forward_speed, 0.0) * delta
-	launch_blend = _get_launch_blend()
+		# 3. Tiempo y distancia desde la salida.
 
-	_debug_tick(delta, speed_kmh)
+		race_elapsed += delta
+		distance_since_launch += maxf(forward_speed, 0.0) * delta
+		launch_blend = _get_launch_blend()
 
+		_debug_tick(delta, speed_kmh)
 
-	# 4. Incorporacion gradual a la trazada propia.
 
-	if merge_distance > 0.0 and forward_speed > 0.0:
-		merge_distance_travelled = minf(
-			merge_distance_travelled + forward_speed * delta,
-			merge_distance
-		)
+		# 4. Incorporacion gradual a la trazada propia.
 
-	var merge_weight: float = 1.0
+		if merge_distance > 0.0 and forward_speed > 0.0:
+			merge_distance_travelled = minf(
+				merge_distance_travelled + forward_speed * delta,
+				merge_distance
+			)
 
-	if merge_distance > 0.0:
-		var merge_progress: float = clampf(
-			merge_distance_travelled / merge_distance,
-			0.0,
-			1.0
-		)
-		merge_weight = merge_progress * merge_progress * (3.0 - 2.0 * merge_progress)
+		var merge_weight: float = 1.0
 
-
-	# 5. Punto mas cercano y orientacion respecto a la pista.
-
-	var car_on_path: Vector3 = path.to_local(global_position)
-	var current_offset: float = curve.get_closest_offset(car_on_path)
-
-	var track_forward: Vector3 = _get_path_forward(
-		path,
-		curve,
-		current_offset,
-		path_length
-	)
-
-	var vehicle_forward: Vector3 = global_transform.basis.z.normalized()
-	vehicle_forward.y = 0.0
-	vehicle_forward = vehicle_forward.normalized()
-
-	var heading_alignment: float = clampf(
-		vehicle_forward.dot(track_forward),
-		-1.0,
-		1.0
-	)
-
-
-	# 6. Desviacion respecto a la trazada esperada.
-
-	var current_progress: float = clampf(current_offset / path_length, 0.0, 1.0)
-
-	var expected_current_offset: float = lerpf(
-		start_lateral_offset,
-		_get_profile_offset(current_progress),
-		merge_weight
-	)
-
-	var current_frame: Transform3D = curve.sample_baked_with_rotation(current_offset)
-
-	var expected_current_global: Vector3 = path.to_global(
-		current_frame.origin
-		+ current_frame.basis.x.normalized() * expected_current_offset
-	)
-
-	var track_deviation: Vector3 = global_position - expected_current_global
-	track_deviation.y = 0.0
-	var distance_from_track: float = track_deviation.length()
-
-
-	# 7. Actualizar recuperacion.
-
-	_update_recovery_state(distance_from_track, heading_alignment, delta)
-
-
-	# 8. Anticipacion.
-
-	var active_lookahead: float = lookahead_distance
-
-	if recovery_active:
-		active_lookahead = recovery_lookahead_distance
-
-	var target_offset: float = current_offset + active_lookahead
-
-	if curve.closed:
-		target_offset = fposmod(target_offset, path_length)
-	else:
-		target_offset = minf(target_offset, path_length)
-
-
-	# 9. Trazada individual en el punto objetivo.
-
-	var normalized_progress: float = clampf(target_offset / path_length, 0.0, 1.0)
-
-	var actual_lateral_offset: float = lerpf(
-		start_lateral_offset,
-		_get_profile_offset(normalized_progress),
-		merge_weight
-	)
-
-
-	# 10. Punto objetivo.
-
-	var target_frame: Transform3D = curve.sample_baked_with_rotation(target_offset)
-
-	var target_global: Vector3 = path.to_global(
-		target_frame.origin
-		+ target_frame.basis.x.normalized() * actual_lateral_offset
-	)
-
-
-	# 11. Obstaculos.
-
-	var obstacle_info: Dictionary = _update_obstacle_avoidance(delta)
-
-	target_global += global_transform.basis.x.normalized() * avoidance_offset
-
-	var obstacle_detected: bool = bool(obstacle_info.get("detected", false))
-	var obstacle_blocked: bool = bool(obstacle_info.get("blocked", false))
-	var obstacle_distance: float = float(obstacle_info.get("distance", forward_sensor_length))
-	var closing_speed: float = float(obstacle_info.get("closing_speed", 0.0))
-	var time_to_collision: float = float(obstacle_info.get("ttc", INF))
-	var obstacle_speed: float = float(obstacle_info.get("obstacle_speed", 0.0))
-	var dodging: bool = bool(obstacle_info.get("dodging", false))
-
-	var launch_phase: bool = _is_launch_phase()
-
-
-	# 12. Deteccion de auto trabado.
-
-	var waiting_behind_car: bool = (
-		obstacle_detected and obstacle_blocked and obstacle_distance < 4.0
-	)
-	_update_stuck_state(speed_kmh, waiting_behind_car, launch_phase, delta)
-
-	var target_local: Vector3 = to_local(target_global)
-	var force_reverse: bool = unstick_timer > 0.0
-
-
-	# 13. Maniobra de recuperacion (trompo, mirando al reves, trabado).
-
-	if recovery_enabled and (
-		force_reverse
-		or heading_alignment < recovery_heading_threshold
-		or target_local.z <= 0.1
-	):
-		recovery_active = true
-		debug_state = "UNSTICK" if force_reverse else "RECUPERACION"
-		_perform_recovery_maneuver(
-			track_forward,
-			target_local,
-			forward_speed,
-			heading_alignment,
-			force_reverse,
-			delta
-		)
-		return
-
-	if target_local.z <= 0.1:
-		debug_state = "OBJETIVO_ATRAS"
-		_apply_drive_output(0.0, brake_power, delta)
-		steering = move_toward(steering, 0.0, steering_response * delta)
-		return
-
-
-	# 14. Direccion (pure pursuit).
-
-	var target_distance: float = Vector2(target_local.x, target_local.z).length()
-	var alpha: float = atan2(target_local.x, target_local.z)
-
-	var desired_steering: float = atan(
-		(2.0 * wheelbase * sin(alpha)) / maxf(target_distance, 0.1)
-	)
-
-	if invert_steering:
-		desired_steering = -desired_steering
-
-	desired_steering = clampf(desired_steering, -max_steer, max_steer)
-
-	var active_steering_response: float = steering_response
-
-	if recovery_active:
-		active_steering_response = recovery_steering_response
-
-	steering = move_toward(steering, desired_steering, active_steering_response * delta)
-
-
-	# 15. Velocidad objetivo.
-
-	var curve_factor: float = clampf(absf(alpha) / deg_to_rad(45.0), 0.0, 1.0)
-
-	var desired_speed: float = lerpf(max_speed, corner_speed, curve_factor)
-
-	# Salida: el limite se libera gradualmente.
-	desired_speed = minf(
-		desired_speed,
-		lerpf(launch_speed_cap, max_speed, launch_blend)
-	)
-
-	if recovery_active:
-		desired_speed = minf(desired_speed, recovery_speed_limit)
-
-
-	# 16. Riesgo de colision.
-
-	var emergency_brake: bool = false
-	var obstacle_limited: bool = false
-
-	if obstacle_detected:
-
-		if launch_phase:
-			# En la grilla mantiene el lugar y regula la velocidad segun la
-			# distancia al auto de adelante (siempre avanza un poco si hay lugar).
-			if obstacle_distance <= 2.0 or time_to_collision <= 0.40:
-				emergency_brake = true
-			else:
-				var launch_gap_speed: float = maxf(
-					(obstacle_distance - 2.5) * 12.0,
-					6.0
-				)
-				desired_speed = minf(desired_speed, launch_gap_speed)
-
-		else:
-			# En carrera: limita la velocidad segun la distancia disponible
-			# para frenar (o esquivar) antes de llegar al obstaculo.
-			obstacle_limited = true
-
-			var gap: float = maxf(obstacle_distance - avoidance_stop_gap, 0.0)
-			var allowed_closing: float = sqrt(2.0 * assumed_brake_decel * gap)
-
-			if dodging:
-				allowed_closing *= dodge_speed_factor
-
-			var allowed_kmh: float = (
-				maxf(obstacle_speed, 0.0) + allowed_closing
-			) * 3.6
-
-			if dodging:
-				allowed_kmh = maxf(allowed_kmh, min_dodge_speed)
-
-			desired_speed = minf(desired_speed, allowed_kmh)
-
-			var stop_room: float = maxf(obstacle_distance - 1.0, 0.1)
-			var needed_decel: float = 0.0
-
-			if closing_speed > 0.5:
-				needed_decel = (closing_speed * closing_speed) / (2.0 * stop_room)
-
-			var panic_ttc: float = 0.35 if dodging else emergency_ttc
-
-			if (
-				obstacle_distance <= emergency_gap_distance
-				or time_to_collision <= panic_ttc
-			):
-				emergency_brake = true
-
-			elif not dodging and needed_decel > assumed_brake_decel * 1.2:
-				emergency_brake = true
-
-
-	# 17. Aceleracion y frenado.
-
-	var target_engine_force: float = 0.0
-	var target_brake: float = 0.0
-
-	if emergency_brake:
-
-		debug_state = "FRENO_EMERGENCIA"
-		target_brake = maxf(obstacle_brake_power, brake_power)
-
-	elif speed_kmh < desired_speed - 1.0:
-
-		var speed_error: float = desired_speed - speed_kmh
-		var acceleration_fraction: float = clampf(
-			speed_error / maxf(acceleration_speed_window, 1.0),
-			min_acceleration_fraction,
-			max_acceleration_fraction
-		)
-
-		target_engine_force = (
-			engine_power
-			* acceleration_fraction
-			* lerpf(launch_power_scale, 1.0, launch_blend)
-		)
-
-		debug_state = "ACELERANDO (salida)" if launch_phase else "ACELERANDO"
-
-	elif speed_kmh > desired_speed + 2.0:
-
-		debug_state = "FRENANDO"
-		target_brake = brake_power
-
-		if obstacle_limited:
-			# Cuanto mas pasado de velocidad, mas fuerte frena.
-			var urgency: float = clampf(
-				(speed_kmh - desired_speed) / 25.0,
+		if merge_distance > 0.0:
+			var merge_progress: float = clampf(
+				merge_distance_travelled / merge_distance,
 				0.0,
 				1.0
 			)
-			target_brake = lerpf(
-				brake_power,
-				maxf(obstacle_brake_power, brake_power),
-				urgency
+			merge_weight = merge_progress * merge_progress * (3.0 - 2.0 * merge_progress)
+
+
+		# 5. Punto mas cercano y orientacion respecto a la pista.
+
+		var car_on_path: Vector3 = path.to_local(global_position)
+		var current_offset: float = curve.get_closest_offset(car_on_path)
+
+		var track_forward: Vector3 = _get_path_forward(
+			path,
+			curve,
+			current_offset,
+			path_length
+		)
+
+		var vehicle_forward: Vector3 = global_transform.basis.z.normalized()
+		vehicle_forward.y = 0.0
+		vehicle_forward = vehicle_forward.normalized()
+
+		var heading_alignment: float = clampf(
+			vehicle_forward.dot(track_forward),
+			-1.0,
+			1.0
+		)
+
+
+		# 6. Desviacion respecto a la trazada esperada.
+
+		var current_progress: float = clampf(current_offset / path_length, 0.0, 1.0)
+
+		var expected_current_offset: float = lerpf(
+			start_lateral_offset,
+			_get_profile_offset(current_progress),
+			merge_weight
+		)
+
+		var current_frame: Transform3D = curve.sample_baked_with_rotation(current_offset)
+
+		var expected_current_global: Vector3 = path.to_global(
+			current_frame.origin
+			+ current_frame.basis.x.normalized() * expected_current_offset
+		)
+
+		var track_deviation: Vector3 = global_position - expected_current_global
+		track_deviation.y = 0.0
+		var distance_from_track: float = track_deviation.length()
+
+
+		# 7. Actualizar recuperacion.
+
+		_update_recovery_state(distance_from_track, heading_alignment, delta)
+
+
+		# 8. Anticipacion.
+
+		var active_lookahead: float = lookahead_distance
+
+		if recovery_active:
+			active_lookahead = recovery_lookahead_distance
+
+		var target_offset: float = current_offset + active_lookahead
+
+		if curve.closed:
+			target_offset = fposmod(target_offset, path_length)
+		else:
+			target_offset = minf(target_offset, path_length)
+
+
+		# 9. Trazada individual en el punto objetivo.
+
+		var normalized_progress: float = clampf(target_offset / path_length, 0.0, 1.0)
+
+		var actual_lateral_offset: float = lerpf(
+			start_lateral_offset,
+			_get_profile_offset(normalized_progress),
+			merge_weight
+		)
+
+
+		# 10. Punto objetivo.
+
+		var target_frame: Transform3D = curve.sample_baked_with_rotation(target_offset)
+
+		var target_global: Vector3 = path.to_global(
+			target_frame.origin
+			+ target_frame.basis.x.normalized() * actual_lateral_offset
+		)
+
+
+		# 11. Obstaculos.
+
+		var obstacle_info: Dictionary = _update_obstacle_avoidance(delta)
+
+		target_global += global_transform.basis.x.normalized() * avoidance_offset
+
+		var obstacle_detected: bool = bool(obstacle_info.get("detected", false))
+		var obstacle_blocked: bool = bool(obstacle_info.get("blocked", false))
+		var obstacle_distance: float = float(obstacle_info.get("distance", forward_sensor_length))
+		var closing_speed: float = float(obstacle_info.get("closing_speed", 0.0))
+		var time_to_collision: float = float(obstacle_info.get("ttc", INF))
+		var obstacle_speed: float = float(obstacle_info.get("obstacle_speed", 0.0))
+		var dodging: bool = bool(obstacle_info.get("dodging", false))
+
+		var launch_phase: bool = _is_launch_phase()
+
+
+		# 12. Deteccion de auto trabado.
+
+		var waiting_behind_car: bool = (
+			obstacle_detected and obstacle_blocked and obstacle_distance < 4.0
+		)
+		_update_stuck_state(speed_kmh, waiting_behind_car, launch_phase, delta)
+
+		var target_local: Vector3 = to_local(target_global)
+		var force_reverse: bool = unstick_timer > 0.0
+
+
+		# 13. Maniobra de recuperacion (trompo, mirando al reves, trabado).
+
+		if recovery_enabled and (
+			force_reverse
+			or heading_alignment < recovery_heading_threshold
+			or target_local.z <= 0.1
+		):
+			recovery_active = true
+			debug_state = "UNSTICK" if force_reverse else "RECUPERACION"
+			_perform_recovery_maneuver(
+				track_forward,
+				target_local,
+				forward_speed,
+				heading_alignment,
+				force_reverse,
+				delta
 			)
-			debug_state = "FRENANDO (obstaculo)"
+			return
+
+		if target_local.z <= 0.1:
+			debug_state = "OBJETIVO_ATRAS"
+			_apply_drive_output(0.0, brake_power, delta)
+			steering = move_toward(steering, 0.0, steering_response * delta)
+			return
+
+
+		# 14. Direccion (pure pursuit).
+
+		var target_distance: float = Vector2(target_local.x, target_local.z).length()
+		var alpha: float = atan2(target_local.x, target_local.z)
+
+		var desired_steering: float = atan(
+			(2.0 * wheelbase * sin(alpha)) / maxf(target_distance, 0.1)
+		)
+
+		if invert_steering:
+			desired_steering = -desired_steering
+
+		desired_steering = clampf(desired_steering, -max_steer, max_steer)
+
+		var active_steering_response: float = steering_response
+
+		if recovery_active:
+			active_steering_response = recovery_steering_response
+
+		steering = move_toward(steering, desired_steering, active_steering_response * delta)
+
+
+		# 15. Velocidad objetivo.
+
+		var curve_factor: float = clampf(absf(alpha) / deg_to_rad(45.0), 0.0, 1.0)
+
+		var desired_speed: float = lerpf(max_speed, corner_speed, curve_factor)
+
+		# Salida: el limite se libera gradualmente.
+		desired_speed = minf(
+			desired_speed,
+			lerpf(launch_speed_cap, max_speed, launch_blend)
+		)
+
+		if recovery_active:
+			desired_speed = minf(desired_speed, recovery_speed_limit)
+
+
+		# 16. Riesgo de colision.
+
+		var emergency_brake: bool = false
+		var obstacle_limited: bool = false
+
+		if obstacle_detected:
+
+			if launch_phase:
+				# En la grilla mantiene el lugar y regula la velocidad segun la
+				# distancia al auto de adelante (siempre avanza un poco si hay lugar).
+				if obstacle_distance <= 2.0 or time_to_collision <= 0.40:
+					emergency_brake = true
+				else:
+					var launch_gap_speed: float = maxf(
+						(obstacle_distance - 2.5) * 12.0,
+						6.0
+					)
+					desired_speed = minf(desired_speed, launch_gap_speed)
+
+			else:
+				# En carrera: limita la velocidad segun la distancia disponible
+				# para frenar (o esquivar) antes de llegar al obstaculo.
+				obstacle_limited = true
+
+				var gap: float = maxf(obstacle_distance - avoidance_stop_gap, 0.0)
+				var allowed_closing: float = sqrt(2.0 * assumed_brake_decel * gap)
+
+				if dodging:
+					allowed_closing *= dodge_speed_factor
+
+				var allowed_kmh: float = (
+					maxf(obstacle_speed, 0.0) + allowed_closing
+				) * 3.6
+
+				if dodging:
+					allowed_kmh = maxf(allowed_kmh, min_dodge_speed)
+
+				desired_speed = minf(desired_speed, allowed_kmh)
+
+				var stop_room: float = maxf(obstacle_distance - 1.0, 0.1)
+				var needed_decel: float = 0.0
+
+				if closing_speed > 0.5:
+					needed_decel = (closing_speed * closing_speed) / (2.0 * stop_room)
+
+				var panic_ttc: float = 0.35 if dodging else emergency_ttc
+
+				if (
+					obstacle_distance <= emergency_gap_distance
+					or time_to_collision <= panic_ttc
+				):
+					emergency_brake = true
+
+				elif not dodging and needed_decel > assumed_brake_decel * 1.2:
+					emergency_brake = true
+
+
+		# 17. Aceleracion y frenado.
+
+		var target_engine_force: float = 0.0
+		var target_brake: float = 0.0
+
+		if emergency_brake:
+
+			debug_state = "FRENO_EMERGENCIA"
+			target_brake = maxf(obstacle_brake_power, brake_power)
+
+		elif speed_kmh < desired_speed - 1.0:
+
+			var speed_error: float = desired_speed - speed_kmh
+			var acceleration_fraction: float = clampf(
+				speed_error / maxf(acceleration_speed_window, 1.0),
+				min_acceleration_fraction,
+				max_acceleration_fraction
+			)
+
+			target_engine_force = (
+				engine_power
+				* acceleration_fraction
+				* lerpf(launch_power_scale, 1.0, launch_blend)
+			)
+
+			debug_state = "ACELERANDO (salida)" if launch_phase else "ACELERANDO"
+
+		elif speed_kmh > desired_speed + 2.0:
+
+			debug_state = "FRENANDO"
+			target_brake = brake_power
+
+			if obstacle_limited:
+				# Cuanto mas pasado de velocidad, mas fuerte frena.
+				var urgency: float = clampf(
+					(speed_kmh - desired_speed) / 25.0,
+					0.0,
+					1.0
+				)
+				target_brake = lerpf(
+					brake_power,
+					maxf(obstacle_brake_power, brake_power),
+					urgency
+				)
+				debug_state = "FRENANDO (obstaculo)"
+
+		else:
+
+			debug_state = "MANTENIENDO"
+
+		if dodging and not emergency_brake:
+			debug_state += " [esquivando]"
+
+		_apply_drive_output(target_engine_force, target_brake, delta)
 
 	else:
-
-		debug_state = "MANTENIENDO"
-
-	if dodging and not emergency_brake:
-		debug_state += " [esquivando]"
-
-	_apply_drive_output(target_engine_force, target_brake, delta)
+		# --- MIENTRAS ESPERA EL SEMÁFORO ---
+		var speed_kmh = linear_velocity.length() * 3.6
+		engine_force = 0.0
+		brake = brake_power
+		steering = move_toward(steering, 0.0, steering_response * delta)
 
 
 # =========================================

@@ -20,19 +20,27 @@ var target_look_at: Vector3 = Vector3.ZERO
 var current_gear := 1     # -1 = reversa, 1 a 5 = marchas
 var speed_kmh := 0.0
 var shift_timer := 0.0
-var puede_conducir := true
+var puede_conducir := false
 @onready var meta: Area3D = $"../LineaMeta"
+
 func _ready() -> void:
 	add_to_group("jugador")
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	target_look_at = global_position
 	meta.carrera_terminada.connect(_on_carrera_terminada)
+	
+	# Congela las físicas al iniciar para que no se deslice en la inclinación de la pista
+	freeze = true
 
 func _on_carrera_terminada() -> void:
 	puede_conducir = false
 
 func _physics_process(delta: float) -> void:
 	if puede_conducir:
+		# Si estaba congelado esperando el semáforo, lo liberamos al habilitar los controles
+		if freeze:
+			freeze = false
+
 		steering = move_toward(steering, Input.get_axis("ui_right", "ui_left") * MAX_STEER, delta * 2.5)
 
 		var throttle := Input.get_axis("ui_down", "ui_up")
@@ -43,7 +51,7 @@ func _physics_process(delta: float) -> void:
 		var braking := (current_gear > 0 and throttle < 0.0) or (current_gear == -1 and throttle > 0.0)
 		brake = BRAKE_POWER if braking else 0.0
 	else:
-		# Carrera terminada: sin control, el auto frena solo y las ruedas se centran
+		# Esperando largada o carrera terminada: sin control, el auto frena y las ruedas se centran
 		speed_kmh = linear_velocity.length() * 3.6
 		engine_force = 0.0
 		brake = BRAKE_POWER * 0.5
@@ -100,7 +108,21 @@ func get_gear_text() -> String:
 	return "R" if current_gear == -1 else str(current_gear)
 
 func _check_camera_switch():
-	if linear_velocity.dot(transform.basis.z) > 0:
-		camera_3d.current = true
-	else:
+	# Solo cambia a cámara de reversa si el auto retrocede de verdad (más de 1 m/s hacia atrás)
+	if linear_velocity.dot(transform.basis.z) < -1.0:
 		reverse_camera.current = true
+	else:
+		camera_3d.current = true
+		
+# Devuelve un valor aproximado de RPM (de 0 a 7000) basado en la marcha y velocidad actual
+func get_rpm() -> float:
+	if current_gear == -1:
+		# En reversa simulamos RPM según la velocidad respecto al límite de reversa
+		return clamp((speed_kmh / REVERSE_MAX_SPEED) * 7000.0, 800.0, 7000.0)
+	
+	var max_speed_current_gear = GEAR_MAX_SPEED[current_gear - 1]
+	# Calculamos qué tan cerca está de la velocidad máxima de su marcha actual (0.0 a 1.0)
+	var ratio = clamp(speed_kmh / max_speed_current_gear, 0.0, 1.0)
+	
+	# Ralentí de ~900 RPM hasta el corte de 7000 RPM
+	return lerp(900.0, 7000.0, ratio)
