@@ -31,7 +31,7 @@ extends Control
 
 @onready var car_view: Control = $SubViewportContainer
 
-@onready var car_holder: Node3D = $SubViewportContainer/SubViewport/Showroom3D/CarHolder
+@onready var car_holder: Node3D = $SubViewportContainer/SubViewport/CarHolder
 
 @onready var info_panel: Control = $InfoPanel
 @onready var brand_panel: Control = $BrandPanel
