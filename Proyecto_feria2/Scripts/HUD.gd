@@ -1,5 +1,6 @@
 extends CanvasLayer
 
+@onready var label_vueltas: Label = %LabelVueltas
 @onready var label_timer: Label = $Control/PanelContainer_Timer/MarginContainer/LabelTimer
 @onready var label_speed: Label = $Control/PanelContainer_Speed/VBoxContainer/LabelSpeed
 @onready var label_gear: Label = $Control/PanelContainer_Speed/VBoxContainer/LabelGear
@@ -19,7 +20,7 @@ var vehicle: Node3D = null
 var time_elapsed: float = 0.0
 var is_timer_running: bool = false
 
-# --- CUENTA REGRESIVA (20 segundos en total, 5 por imagen) ---
+# --- CUENTA REGRESIVA (4 segundos en total, 1 por imagen) ---
 var countdown_time: float = 4.0
 var race_started: bool = false
 
@@ -28,15 +29,17 @@ var race_started: bool = false
 var rpm_fill_style: StyleBoxFlat
 
 func _ready() -> void:
+	label_vueltas.text = "VUELTA 0"
+
 	if vehicle_path:
 		vehicle = get_node_or_null(vehicle_path)
-	
+
 	# Configurar barra de RPM
 	if progress_bar_rpm:
 		progress_bar_rpm.min_value = 0
 		progress_bar_rpm.max_value = max_rpm
 		progress_bar_rpm.show_percentage = false
-		
+
 		rpm_fill_style = StyleBoxFlat.new()
 		rpm_fill_style.bg_color = Color(1.0, 1.0, 1.0, 1.0)
 		rpm_fill_style.corner_radius_top_left = 4
@@ -49,6 +52,21 @@ func _ready() -> void:
 	if texture_semaforo and imagen_paso_1:
 		texture_semaforo.visible = true
 		texture_semaforo.texture = imagen_paso_1
+	# Mostrar la primera imagen del semáforo apenas carga la carrera
+	if texture_semaforo and imagen_paso_1:
+		texture_semaforo.visible = true
+		texture_semaforo.texture = imagen_paso_1
+
+	# Conectar con la línea de meta
+	var meta := get_tree().get_first_node_in_group("linea_meta")
+	if meta:
+		if not meta.vuelta_cambiada.is_connected(_on_linea_meta_vuelta_cambiada):
+			meta.vuelta_cambiada.connect(_on_linea_meta_vuelta_cambiada)
+		if not meta.carrera_terminada.is_connected(mostrar_fin):
+			meta.carrera_terminada.connect(mostrar_fin)
+		label_vueltas.text = "VUELTA %d / %d" % [meta.vuelta_actual, meta.vueltas_totales]
+	else:
+		push_warning("HUD: no encuentro LineaMeta en el grupo 'linea_meta'")
 
 func _process(delta: float) -> void:
 	# Mientras no haya largado la carrera, corre el semáforo y los autos están congelados
@@ -62,7 +80,7 @@ func _process(delta: float) -> void:
 
 func _update_countdown(delta: float) -> void:
 	countdown_time -= delta
-	
+
 	if texture_semaforo:
 		if countdown_time > 3.0:
 			texture_semaforo.texture = imagen_paso_1
@@ -86,18 +104,18 @@ func _liberar_autos() -> void:
 func _update_timer(delta: float) -> void:
 	if not is_timer_running:
 		return
-		
+
 	time_elapsed += delta
 	var minutes: int = int(time_elapsed / 60.0)
 	var seconds: int = int(time_elapsed) % 60
 	var msecs: int = int((time_elapsed - int(time_elapsed)) * 100)
-	
+
 	label_timer.text = "%02d:%02d:%02d" % [minutes, seconds, msecs]
 
 func _update_vehicle_hud() -> void:
 	if not vehicle:
 		return
-	
+
 	# 1. Velocidad
 	var speed_kmh: float = 0.0
 	if "speed_kmh" in vehicle:
@@ -122,3 +140,14 @@ func _update_vehicle_hud() -> void:
 				rpm_fill_style.bg_color = Color(0.95, 0.15, 0.15) # Rojo alerta corte
 			else:
 				rpm_fill_style.bg_color = Color(1.0, 1.0, 1.0, 1.0) # Color normal
+
+# --- VUELTAS ---
+
+# Conectada a la señal vuelta_cambiada de LineaMeta
+func _on_linea_meta_vuelta_cambiada(actual: int, total: int) -> void:
+	label_vueltas.text = "VUELTA %d / %d" % [actual, total]
+
+# Conéctala a la señal carrera_terminada de LineaMeta
+func mostrar_fin() -> void:
+	label_vueltas.text = "¡FIN!"
+	is_timer_running = false  # congela el cronómetro

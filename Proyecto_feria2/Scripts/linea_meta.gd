@@ -5,7 +5,7 @@ signal carrera_terminada
 
 @export var vueltas_totales: int = 3
 
-var vuelta_actual: int = 0   # 0 = la carrera aún no empezó
+var vuelta_actual: int = 0   # 0 = la cDarrera aún no empezó
 var terminada: bool = false
 
 func _ready() -> void:
@@ -36,3 +36,5 @@ func _on_body_entered(body: Node3D) -> void:
 
 	vuelta_cambiada.emit(vuelta_actual, vueltas_totales)
 	print("Vuelta ", vuelta_actual, " / ", vueltas_totales)
+func _enter_tree() -> void:
+	add_to_group("linea_meta")
