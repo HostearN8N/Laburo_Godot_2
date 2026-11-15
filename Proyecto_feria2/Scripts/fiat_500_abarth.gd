@@ -3,7 +3,6 @@ extends VehicleBody3D
 const MAX_STEER = 0.5
 const ENGINE_POWER = 8500.0
 
-
 const GEAR_MAX_SPEED: Array[float] = [50.0, 85.0, 125.0, 165.0, 200.0]  # km/h máx. de 1ª a 5ª
 const GEAR_TORQUE: Array[float] = [1.0, 0.75, 0.55, 0.42, 0.33]         # fuerza relativa por marcha
 const REVERSE_MAX_SPEED := 30.0   # km/h máx. en reversa
@@ -57,6 +56,10 @@ func _physics_process(delta: float) -> void:
 		brake = BRAKE_POWER * 0.5
 		steering = move_toward(steering, 0.0, delta * 2.5)
 
+	# Detectar si se presiona la letra R para enderezar el auto en cualquier momento
+	if Input.is_key_pressed(KEY_R):
+		_reset_orientation()
+
 	camera_pivot.global_position = camera_pivot.global_position.lerp(global_position, delta * 20.0)
 	camera_pivot.transform = camera_pivot.transform.interpolate_with(transform, delta * 5.0)
 
@@ -66,18 +69,34 @@ func _physics_process(delta: float) -> void:
 
 	_check_camera_switch()
 
+func _reset_orientation() -> void:
+	# Guardamos la posición actual pero elevamos un poco el auto para que no colisione con el suelo
+	var pos = global_position + Vector3(0, 1.5, 0)
+	
+	# Obtenemos la dirección hacia donde apunta el auto pero aplanada en el plano XZ
+	var forward = -transform.basis.z
+	forward.y = 0
+	forward = forward.normalized()
+	if forward.length_squared() < 0.01:
+		forward = Vector3.FORWARD
+		
+	# Reseteamos las velocidades físicas para que no salga disparado
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	
+	# Reubicamos el vehículo alineado correctamente de pie
+	global_transform = Transform3D(Basis.looking_at(forward, Vector3.UP), pos)
+
 func _update_gearbox(delta: float, throttle: float) -> void:
 	speed_kmh = linear_velocity.length() * 3.6
 	shift_timer = maxf(shift_timer - delta, 0.0)
 
-	# Casi detenido: elegir reversa o 1ª según la tecla
 	if speed_kmh < 3.0:
 		if throttle < 0.0:
 			current_gear = -1
 		elif throttle > 0.0:
 			current_gear = 1
 
-	# Cambios automáticos (solo hacia adelante)
 	if current_gear > 0 and shift_timer <= 0.0:
 		var idx := current_gear - 1
 		if current_gear < GEAR_MAX_SPEED.size() and throttle > 0.0 \
@@ -90,7 +109,7 @@ func _update_gearbox(delta: float, throttle: float) -> void:
 
 func _get_engine_force(throttle: float) -> float:
 	if shift_timer > 0.0:
-		return 0.0  # pausa mientras cambia
+		return 0.0 
 
 	if current_gear == -1:
 		if throttle >= 0.0:
@@ -108,21 +127,15 @@ func get_gear_text() -> String:
 	return "R" if current_gear == -1 else str(current_gear)
 
 func _check_camera_switch():
-	# Solo cambia a cámara de reversa si el auto retrocede de verdad (más de 1 m/s hacia atrás)
 	if linear_velocity.dot(transform.basis.z) < -1.0:
 		reverse_camera.current = true
 	else:
 		camera_3d.current = true
 		
-# Devuelve un valor aproximado de RPM (de 0 a 7000) basado en la marcha y velocidad actual
 func get_rpm() -> float:
 	if current_gear == -1:
-		# En reversa simulamos RPM según la velocidad respecto al límite de reversa
 		return clamp((speed_kmh / REVERSE_MAX_SPEED) * 7000.0, 800.0, 7000.0)
 	
 	var max_speed_current_gear = GEAR_MAX_SPEED[current_gear - 1]
-	# Calculamos qué tan cerca está de la velocidad máxima de su marcha actual (0.0 a 1.0)
 	var ratio = clamp(speed_kmh / max_speed_current_gear, 0.0, 1.0)
-	
-	# Ralentí de ~900 RPM hasta el corte de 7000 RPM
 	return lerp(900.0, 7000.0, ratio)
