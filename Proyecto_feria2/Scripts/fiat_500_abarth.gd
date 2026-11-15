@@ -19,6 +19,22 @@ const GRASS_MIN_SPEED := 40.0         # tope mínimo sobre el pasto, para no que
 const GRASS_DRAG := 0.3               # qué tan rápido frena al pasar el tope (m/s² por cada km/h de exceso)
 const DEBUG_PASTO := true             # imprime un mensaje cada vez que entra/sale del pasto (poner en false al terminar)
 
+# --- Contramano ---
+const PATH_REVERSED := false          # poner en true si el Path3D está dibujado al revés del sentido de carrera
+const WRONG_WAY_MAX_SPEED := 10.0     # km/h máx. permitidos a contramano (lo justo para maniobrar y dar la vuelta)
+const WRONG_WAY_MIN_SPEED := 5.0      # por debajo de esta velocidad no se considera contramano
+const WRONG_WAY_ANGLE_COS := 0.4      # cuánto debe ir en contra de la pista (0.4 = más de ~114° respecto al sentido correcto)
+const WRONG_WAY_DETECT_TIME := 0.5    # segundos yendo en contra antes de activar el bloqueo
+const WRONG_WAY_REALIGN_TIME := 3.0   # segundos a contramano antes de girar el auto solo (poner 999 para desactivar)
+const WRONG_WAY_DRAG := 0.5           # qué tan fuerte frena al pasar el tope de contramano
+const WRONG_WAY_MAX_DIST := 25.0      # a más de estos metros de la trazada no se evalúa el sentido
+const TANGENT_STEP := 3.0             # metros hacia adelante/atrás para calcular el sentido de la pista
+const MAX_LIMIT_DECEL := 15.0         # desaceleración máx. (m/s²) que pueden aplicar el pasto y el contramano
+const WRONG_WAY_START_GRACE := 5.0    # segundos desde la largada en los que no se evalúa el contramano
+const WRONG_WAY_NOSE_COS := 0.3       # el auto debe ir de trompa (no de culata) para contar como contramano
+const NOSE_IS_PLUS_Z := true          # este auto avanza hacia +Z (por eso la cámara de reversa usa basis.z); si al reubicarse queda mirando al revés, poner en false
+const DEBUG_CONTRAMANO := true        # imprime los datos cada vez que se activa el contramano (poner en false al terminar)
+
 @onready var camera_pivot = $Camera_Pivot
 @onready var camera_3d = $Camera_Pivot/Camera3D
 @onready var reverse_camera = $Camera_Pivot/Reverse_camera
@@ -31,6 +47,14 @@ var puede_conducir := false
 var path: Path3D
 var en_pasto := false
 var grass_cap := INF      # velocidad máx. (km/h) mientras está en el pasto; INF = sin límite
+var track_dir := Vector3.ZERO   # sentido de la pista en el punto más cercano (plano XZ, normalizado)
+var contramano := false
+var wrong_way_time := 0.0
+var wrong_way_cap := INF  # velocidad máx. (km/h) mientras va a contramano; INF = sin límite
+var wrong_way_label: Label
+var race_time := 0.0      # segundos desde que se habilitó el control (largada)
+var _dbg_offset := 0.0
+var _dbg_dist := 0.0
 @onready var meta: Area3D = $"../LineaMeta"
 
 func _ready() -> void:
@@ -40,7 +64,8 @@ func _ready() -> void:
 	meta.carrera_terminada.connect(_on_carrera_terminada)
 	path = get_node_or_null("../Path3D") as Path3D
 	if path == null:
-		push_warning("No se encontró ../Path3D: la penalización por pasto no va a funcionar")
+		push_warning("No se encontró ../Path3D: el pasto y el contramano no van a funcionar")
+	_create_wrong_way_label()
 	
 	# Congela las físicas al iniciar para que no se deslice en la inclinación de la pista
 	freeze = true
@@ -48,9 +73,29 @@ func _ready() -> void:
 func _on_carrera_terminada() -> void:
 	puede_conducir = false
 
+# Crea el cartel de "contramano" por código, así no hace falta tocar el HUD
+func _create_wrong_way_label() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+
+	wrong_way_label = Label.new()
+	wrong_way_label.text = "¡CONTRAMANO!"
+	wrong_way_label.add_theme_font_size_override("font_size", 56)
+	wrong_way_label.add_theme_color_override("font_color", Color(1.0, 0.15, 0.1))
+	wrong_way_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	wrong_way_label.add_theme_constant_override("outline_size", 10)
+	wrong_way_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	wrong_way_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	wrong_way_label.offset_top = 120.0
+	wrong_way_label.offset_bottom = 200.0
+	wrong_way_label.visible = false
+	layer.add_child(wrong_way_label)
+
 func _physics_process(delta: float) -> void:
 	_update_surface()
-	_apply_grass_drag()
+	_update_wrong_way(delta)
+	_apply_speed_limit_drag()
 
 	if puede_conducir:
 		# Si estaba congelado esperando el semáforo, lo liberamos al habilitar los controles
@@ -86,17 +131,32 @@ func _physics_process(delta: float) -> void:
 
 	_check_camera_switch()
 
-# Detecta si el auto se salió de la pista midiendo su distancia a la trazada (Path3D).
-# Al entrar al pasto fija un tope de velocidad: la velocidad de entrada menos GRASS_SPEED_PENALTY.
+# Mide la posición del auto respecto a la trazada (Path3D) para saber:
+#  - si se salió de la pista (pasto) y fijar el tope de velocidad
+#  - hacia dónde va la pista en ese punto (para detectar el contramano)
 func _update_surface() -> void:
-	if path == null or path.curve == null:
+	track_dir = Vector3.ZERO
+	if path == null or path.curve == null or path.curve.point_count < 2:
 		return
 
-	var closest_local := path.curve.get_closest_point(path.to_local(global_position))
-	var closest := path.to_global(closest_local)
+	var curve := path.curve
+	var offset := curve.get_closest_offset(path.to_local(global_position))
+	var closest := path.to_global(curve.sample_baked(offset))
 	# Distancia solo en el plano XZ, para ignorar desniveles
 	var dist := Vector2(global_position.x - closest.x, global_position.z - closest.z).length()
+	_dbg_offset = offset
+	_dbg_dist = dist
 
+	# --- Sentido de la pista (tangente de la trazada en este punto) ---
+	var length := curve.get_baked_length()
+	var p_ahead := path.to_global(curve.sample_baked(minf(offset + TANGENT_STEP, length)))
+	var p_behind := path.to_global(curve.sample_baked(maxf(offset - TANGENT_STEP, 0.0)))
+	var dir := p_ahead - p_behind
+	dir.y = 0.0
+	if dir.length() > 0.01 and dist < WRONG_WAY_MAX_DIST:
+		track_dir = dir.normalized() * (-1.0 if PATH_REVERSED else 1.0)
+
+	# --- Pasto ---
 	# Histéresis: entra al pasto al pasar el borde, y vuelve a "pista" un poco antes de ese borde
 	var was_on_grass := en_pasto
 	if en_pasto:
@@ -104,6 +164,7 @@ func _update_surface() -> void:
 	else:
 		en_pasto = dist > TRACK_HALF_WIDTH
 
+	# Al entrar al pasto el tope es la velocidad de entrada menos GRASS_SPEED_PENALTY
 	if en_pasto and not was_on_grass:
 		var entry_speed := linear_velocity.length() * 3.6
 		grass_cap = maxf(entry_speed - GRASS_SPEED_PENALTY, GRASS_MIN_SPEED)
@@ -114,35 +175,84 @@ func _update_surface() -> void:
 		if DEBUG_PASTO:
 			print("Volvió a la pista")
 
-# Si el auto va más rápido que el tope del pasto, lo frena de forma gradual
-func _apply_grass_drag() -> void:
-	if not en_pasto:
-		return
-	var excess := linear_velocity.length() * 3.6 - grass_cap
-	if excess > 0.0:
-		apply_central_force(-linear_velocity.normalized() * mass * excess * GRASS_DRAG)
+# Detecta si el auto avanza en contra del sentido de la pista.
+# A contramano la velocidad queda limitada; si sigue así unos segundos, el auto se gira solo.
+func _update_wrong_way(delta: float) -> void:
+	# Segundos desde que se habilitó el control (largada)
+	if puede_conducir:
+		race_time += delta
+	else:
+		race_time = 0.0
+
+	var vel := linear_velocity
+	vel.y = 0.0
+	var vel_kmh := vel.length() * 3.6
+
+	var going_wrong := false
+	# Contramano = avanzar de trompa en contra del sentido de la pista.
+	# No cuenta ir de culata (por ejemplo, deslizarse hacia atrás por la pendiente de la largada)
+	# ni los primeros segundos de la carrera.
+	if puede_conducir and race_time > WRONG_WAY_START_GRACE \
+			and track_dir != Vector3.ZERO and vel_kmh > WRONG_WAY_MIN_SPEED:
+		var vel_dir := vel.normalized()
+		var nose := transform.basis.z if NOSE_IS_PLUS_Z else -transform.basis.z
+		nose.y = 0.0
+		if nose.length() > 0.01:
+			var nose_first := vel_dir.dot(nose.normalized()) > WRONG_WAY_NOSE_COS
+			going_wrong = nose_first and vel_dir.dot(track_dir) < -WRONG_WAY_ANGLE_COS
+
+	if going_wrong:
+		wrong_way_time += delta
+	else:
+		wrong_way_time = maxf(wrong_way_time - delta * 4.0, 0.0)
+
+	var was_wrong := contramano
+	contramano = wrong_way_time >= WRONG_WAY_DETECT_TIME
+	if DEBUG_CONTRAMANO and contramano and not was_wrong:
+		print("CONTRAMANO | offset %.0f | dist %.1f m | vel %.0f km/h | track_dir %s | pos %s" % [_dbg_offset, _dbg_dist, vel_kmh, track_dir, global_position])
+	wrong_way_cap = WRONG_WAY_MAX_SPEED if contramano else INF
+	wrong_way_label.visible = contramano
+
+	# Demasiado tiempo a contramano: se reubica el auto mirando hacia el sentido correcto
+	if wrong_way_time >= WRONG_WAY_REALIGN_TIME:
+		_reset_orientation(track_dir)
+		wrong_way_time = 0.0
+
+# Si el auto va más rápido que el tope (pasto o contramano), lo frena de forma gradual
+func _apply_speed_limit_drag() -> void:
+	var speed := linear_velocity.length() * 3.6
+	var decel := maxf((speed - grass_cap) * GRASS_DRAG, (speed - wrong_way_cap) * WRONG_WAY_DRAG)
+	if decel > 0.0:
+		decel = minf(decel, MAX_LIMIT_DECEL)
+		apply_central_force(-linear_velocity.normalized() * mass * decel)
 
 # Velocidad máxima (km/h) de una marcha
 func _gear_top(gear: int) -> float:
 	return REVERSE_MAX_SPEED if gear == -1 else GEAR_MAX_SPEED[gear - 1]
 
-func _reset_orientation() -> void:
+# Endereza el auto. Si se pasa nose_dir, deja la TROMPA del auto mirando hacia esa dirección;
+# si no, conserva hacia donde apuntaba.
+func _reset_orientation(nose_dir := Vector3.ZERO) -> void:
 	# Guardamos la posición actual pero elevamos un poco el auto para que no colisione con el suelo
 	var pos = global_position + Vector3(0, 1.5, 0)
 	
-	# Obtenemos la dirección hacia donde apunta el auto pero aplanada en el plano XZ
-	var forward = -transform.basis.z
-	forward.y = 0
-	forward = forward.normalized()
-	if forward.length_squared() < 0.01:
-		forward = Vector3.FORWARD
+	# Dirección hacia donde va a mirar el auto, aplanada en el plano XZ
+	# Basis.looking_at apunta el eje -Z hacia la dirección dada, pero este auto avanza hacia +Z.
+	# Por eso, para que la trompa mire hacia nose_dir, hay que pasarle la dirección opuesta.
+	var look := -transform.basis.z   # sin argumento: conserva la orientación actual
+	if nose_dir != Vector3.ZERO:
+		look = -nose_dir if NOSE_IS_PLUS_Z else nose_dir
+	look.y = 0.0
+	look = look.normalized()
+	if look.length_squared() < 0.01:
+		look = Vector3.FORWARD
 		
 	# Reseteamos las velocidades físicas para que no salga disparado
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	
 	# Reubicamos el vehículo alineado correctamente de pie
-	global_transform = Transform3D(Basis.looking_at(forward, Vector3.UP), pos)
+	global_transform = Transform3D(Basis.looking_at(look, Vector3.UP), pos)
 
 func _update_gearbox(delta: float, throttle: float) -> void:
 	speed_kmh = linear_velocity.length() * 3.6
@@ -167,17 +277,20 @@ func _get_engine_force(throttle: float) -> float:
 	if shift_timer > 0.0:
 		return 0.0 
 
+	# Tope externo: el menor entre el del pasto y el de contramano (INF si ninguno aplica)
+	var cap := minf(grass_cap, wrong_way_cap)
+
 	if current_gear == -1:
 		if throttle >= 0.0:
 			return 0.0
-		var rev_top := minf(_gear_top(-1), grass_cap)
+		var rev_top := minf(_gear_top(-1), cap)
 		var rev_limit := clampf(inverse_lerp(rev_top * 1.05, rev_top, speed_kmh), 0.0, 1.0)
 		return throttle * ENGINE_POWER * 0.6 * rev_limit
 
 	if throttle <= 0.0:
 		return 0.0
-	# El motor se corta al llegar al tope de la marcha o al tope del pasto, lo que sea menor
-	var top := minf(_gear_top(current_gear), grass_cap)
+	# El motor se corta al llegar al tope de la marcha o al tope externo, lo que sea menor
+	var top := minf(_gear_top(current_gear), cap)
 	var limit := clampf(inverse_lerp(top * 1.05, top, speed_kmh), 0.0, 1.0)
 	return throttle * ENGINE_POWER * GEAR_TORQUE[current_gear - 1] * limit
 
