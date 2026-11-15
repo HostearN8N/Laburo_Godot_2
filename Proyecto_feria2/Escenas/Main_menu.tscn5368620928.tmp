@@ -1,0 +1,237 @@
+[gd_scene format=3 uid="uid://bo3b0g277h54x"]
+
+[ext_resource type="Script" uid="uid://dnnvnxplbxiou" path="res://Escenas/garaje_button.gd" id="1_p67yi"]
+[ext_resource type="PackedScene" uid="uid://dvgrienlnwxwo" path="res://Modelos3D/Exterior_garage/Menu_principal.glb" id="2_c7uy1"]
+[ext_resource type="Script" uid="uid://ct6tpw7nf18na" path="res://Escenas/Credit_button.gd" id="2_jshvw"]
+[ext_resource type="Script" uid="uid://stekv7tw5pm" path="res://Escenas/Salir_button.gd" id="2_ju2dq"]
+[ext_resource type="FontFile" uid="uid://bn6y4t1puclg4" path="res://Extras/Berthold Akzidenz Grotesk BE Bold Extended.ttf" id="3_p67yi"]
+[ext_resource type="Texture2D" uid="uid://bhjq8mhr3repq" path="res://Extras/Gemini_Generated_Image_cah4epcah4epcah4 (1).png" id="4_ju2dq"]
+[ext_resource type="Script" uid="uid://dom263cv1l2m8" path="res://Scripts/Botones.gd" id="5_p67yi"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c7uy1"]
+sky_horizon_color = Color(0.66224277, 0.6717428, 0.6867428, 1)
+ground_horizon_color = Color(0.66224277, 0.6717428, 0.6867428, 1)
+
+[sub_resource type="Sky" id="Sky_pj65r"]
+sky_material = SubResource("ProceduralSkyMaterial_c7uy1")
+
+[sub_resource type="Environment" id="Environment_35hky"]
+background_mode = 2
+sky = SubResource("Sky_pj65r")
+ambient_light_source = 3
+ambient_light_color = Color(0.5764706, 0.77254903, 0.99215686, 1)
+ambient_light_energy = 0.1
+tonemap_mode = 2
+tonemap_exposure = 0.8
+volumetric_fog_density = 0.03
+volumetric_fog_anisotropy = 0.6
+volumetric_fog_length = 40.0
+
+[sub_resource type="FontVariation" id="FontVariation_y45ns"]
+base_font = ExtResource("3_p67yi")
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_jagmf"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fbskp"]
+content_margin_left = 20.0
+bg_color = Color(0.13333334, 0.13333334, 0.13333334, 1)
+border_width_left = 6
+border_color = Color(1, 0.8, 0, 1)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+corner_detail = 20
+shadow_color = Color(0, 0, 0, 0.28235295)
+shadow_size = 6
+shadow_offset = Vector2(0, 3.41)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_gkqxn"]
+content_margin_left = 20.0
+bg_color = Color(0.13333334, 0.13333334, 0.13333334, 1)
+border_width_left = 6
+border_color = Color(1, 0.8, 0, 1)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+corner_detail = 20
+shadow_color = Color(0, 0, 0, 0.28235295)
+shadow_size = 6
+shadow_offset = Vector2(0, 3.41)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_kue0o"]
+content_margin_left = 20.0
+bg_color = Color(0.13333334, 0.13333334, 0.13333334, 1)
+border_width_left = 6
+border_color = Color(1, 0.8, 0, 1)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+corner_detail = 20
+shadow_color = Color(0, 0, 0, 0.28235295)
+shadow_size = 6
+shadow_offset = Vector2(0, 3.41)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pypqk"]
+content_margin_left = 20.0
+bg_color = Color(0.13333334, 0.13333334, 0.13333334, 1)
+border_width_left = 6
+border_color = Color(1, 0.8, 0, 1)
+corner_radius_top_left = 20
+corner_radius_top_right = 20
+corner_radius_bottom_right = 20
+corner_radius_bottom_left = 20
+corner_detail = 20
+shadow_color = Color(0, 0, 0, 0.28235295)
+shadow_size = 6
+shadow_offset = Vector2(0, 3.41)
+
+[node name="MainMenu" type="Control" unique_id=1458547620]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 1.0
+offset_right = 2.0
+offset_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_p67yi")
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="." unique_id=666668540]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+script = ExtResource("2_jshvw")
+
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer" unique_id=1030975655]
+handle_input_locally = false
+size = Vector2i(1365, 768)
+render_target_update_mode = 4
+script = ExtResource("2_ju2dq")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewportContainer/SubViewport" unique_id=2032045641]
+environment = SubResource("Environment_35hky")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewportContainer/SubViewport" unique_id=520151457]
+transform = Transform3D(-0.7198463, 0.64278764, -0.26200268, -0.34202015, -1.4950178e-08, 0.9396927, 0.60402274, 0.7660445, 0.21984635, 0, 0, 0)
+light_color = Color(1, 0.95686275, 0.8784314, 1)
+light_energy = 1.8
+light_volumetric_fog_energy = 4.0
+shadow_enabled = true
+shadow_normal_bias = 3.485
+directional_shadow_max_distance = 35.0
+
+[node name="Menu_principal" parent="SubViewportContainer/SubViewport" unique_id=1387582354 instance=ExtResource("2_c7uy1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 18.030327, 0, 17.62894)
+
+[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport" unique_id=876632102]
+transform = Transform3D(0.2915588, 0.036653504, -0.95585036, 0.0010043557, 0.99925333, 0.03862421, 0.9565524, -0.01222124, 0.2913043, 13.300627, 1.2737303, 21.055817)
+fov = 51.4
+
+[node name="PanelDiagonal" type="Polygon2D" parent="." unique_id=357671731]
+position = Vector2(52, 111)
+color = Color(0.07058824, 0.07058824, 0.07058824, 0.9019608)
+polygon = PackedVector2Array(653, -113, 368, 659, -55, 658, -52, -112)
+
+[node name="Logo" type="Sprite2D" parent="." unique_id=1745670500]
+position = Vector2(338, 117.999985)
+scale = Vector2(0.499434, 0.4744898)
+texture = ExtResource("4_ju2dq")
+
+[node name="Garaje" type="Button" parent="." unique_id=1321366391]
+custom_minimum_size = Vector2(400, 75)
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = -102.5
+offset_right = 400.0
+offset_bottom = -27.5
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 6
+theme_override_constants/h_separation = 15
+theme_override_fonts/font = SubResource("FontVariation_y45ns")
+theme_override_font_sizes/font_size = 32
+theme_override_styles/normal = SubResource("StyleBoxEmpty_jagmf")
+theme_override_styles/hover = SubResource("StyleBoxFlat_fbskp")
+theme_override_styles/focus = SubResource("StyleBoxFlat_gkqxn")
+text = "GARAJE"
+script = ExtResource("5_p67yi")
+
+[node name="Controles" type="Button" parent="." unique_id=1606640659]
+custom_minimum_size = Vector2(400, 75)
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = -5.5
+offset_right = 400.0
+offset_bottom = 69.5
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 6
+theme_override_constants/h_separation = 15
+theme_override_fonts/font = SubResource("FontVariation_y45ns")
+theme_override_font_sizes/font_size = 32
+theme_override_styles/normal = SubResource("StyleBoxEmpty_jagmf")
+theme_override_styles/hover = SubResource("StyleBoxFlat_kue0o")
+theme_override_styles/focus = SubResource("StyleBoxFlat_pypqk")
+text = "CONTROLES
+"
+script = ExtResource("5_p67yi")
+
+[node name="Creditos" type="Button" parent="." unique_id=814095223]
+custom_minimum_size = Vector2(400, 75)
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = 93.0
+offset_right = 400.0
+offset_bottom = 168.0
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 6
+theme_override_constants/h_separation = 15
+theme_override_fonts/font = SubResource("FontVariation_y45ns")
+theme_override_font_sizes/font_size = 32
+theme_override_styles/normal = SubResource("StyleBoxEmpty_jagmf")
+theme_override_styles/hover = SubResource("StyleBoxFlat_kue0o")
+theme_override_styles/focus = SubResource("StyleBoxFlat_pypqk")
+text = "CREDITOS
+"
+script = ExtResource("5_p67yi")
+
+[node name="Salir" type="Button" parent="." unique_id=496032106]
+custom_minimum_size = Vector2(200, 35)
+layout_mode = 0
+offset_left = -3.0
+offset_top = 693.0
+offset_right = 197.0
+offset_bottom = 768.0
+size_flags_horizontal = 4
+size_flags_vertical = 6
+theme_override_constants/h_separation = 15
+theme_override_fonts/font = SubResource("FontVariation_y45ns")
+theme_override_font_sizes/font_size = 32
+theme_override_styles/normal = SubResource("StyleBoxEmpty_jagmf")
+theme_override_styles/hover = SubResource("StyleBoxFlat_kue0o")
+theme_override_styles/focus = SubResource("StyleBoxFlat_pypqk")
+text = "SALIR
+
+
+"
+script = ExtResource("5_p67yi")
+
+[connection signal="pressed" from="Garaje" to="." method="_on_garaje_pressed"]
+[connection signal="pressed" from="Creditos" to="SubViewportContainer" method="_on_creditos_pressed"]
+[connection signal="pressed" from="Salir" to="SubViewportContainer/SubViewport" method="_on_salir_pressed"]
