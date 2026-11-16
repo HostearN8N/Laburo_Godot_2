@@ -12,8 +12,8 @@ const DOWNSHIFT_AT := 0.62        # Rebajes agresivos para mantener el turbo car
 const SHIFT_TIME := 0.25          # Cambios de doble embrague / Speedshift muy rápidos
 const BRAKE_POWER := 34.0         # Frenado de alto rendimiento (discos grandes AMG)
 
-@onready var camera_pivot = 
-@onready var camera_3d = 
+@onready var camera_pivot = $CameraPivot
+@onready var camera_3d = $CameraPivot/Camera3D2
 @onready var reverse_camera = $CameraPivot/Camera3D
 
 var target_look_at: Vector3 = Vector3.ZERO

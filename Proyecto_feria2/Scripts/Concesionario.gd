@@ -13,9 +13,16 @@ extends Control
 @export var vehicle_specs: PackedStringArray = []
 @export var vehicle_logos: Array[Texture2D] = []
 
+# Ajuste individual de altura para cada vehículo.
+# Positivo = sube el auto.
+# Negativo = baja el auto.
+# Cero = posición original.
+
+@export var vehicle_vertical_offsets: Array[float] = []
+
 
 # =========================================
-# CONFIGURACIÓN DE ANIMACIONES
+# CONFIGURACIÓN DE TRANSICIONES
 # =========================================
 
 @export_group("Transiciones")
@@ -23,6 +30,21 @@ extends Control
 @export var fade_out_time: float = 0.20
 @export var fade_in_time: float = 0.50
 @export var slide_distance: float = 35.0
+
+
+# =========================================
+# ANIMACIÓN DE FLECHAS
+# =========================================
+
+@export_group("Animación de flechas")
+
+@export var arrow_lift_distance: float = 8.0
+@export var arrow_animation_duration: float = 0.12
+
+var previous_home_position: Vector2
+var next_home_position: Vector2
+
+var button_tweens: Dictionary = {}
 
 
 # =========================================
@@ -69,13 +91,58 @@ func _ready() -> void:
 	info_home_position = info_panel.position
 	brand_home_position = brand_panel.position
 
+	# Guardar posiciones originales de las flechas.
+	previous_home_position = previous_button.position
+	next_home_position = next_button.position
+
+	# Conectar navegación.
 	previous_button.pressed.connect(previous_vehicle)
 	next_button.pressed.connect(next_vehicle)
 
+	# Conectar animaciones de las flechas.
+	previous_button.button_down.connect(
+		_on_arrow_button_down.bind(previous_button)
+	)
+
+	previous_button.button_up.connect(
+		_on_arrow_button_up.bind(previous_button)
+	)
+
+	next_button.button_down.connect(
+		_on_arrow_button_down.bind(next_button)
+	)
+
+	next_button.button_up.connect(
+		_on_arrow_button_up.bind(next_button)
+	)
+
+	# Preparar presentación.
 	_hide_presentation()
 
-	if vehicle_scenes.size() > 0:
-		_display_vehicle(0)
+	var valid_indices := _get_valid_vehicle_indices()
+
+	# Las flechas solamente se deshabilitan si no hay autos.
+	previous_button.disabled = valid_indices.is_empty()
+	next_button.disabled = valid_indices.is_empty()
+
+	if not valid_indices.is_empty():
+		_display_vehicle(valid_indices[0])
+
+
+# =========================================
+# DETECTAR VEHÍCULOS DISPONIBLES
+# =========================================
+
+func _get_valid_vehicle_indices() -> Array[int]:
+
+	var valid_indices: Array[int] = []
+
+	for i in range(vehicle_scenes.size()):
+
+		if vehicle_scenes[i] != null:
+			valid_indices.append(i)
+
+	return valid_indices
 
 
 # =========================================
@@ -84,18 +151,32 @@ func _ready() -> void:
 
 func next_vehicle() -> void:
 
-	if vehicle_scenes.is_empty():
-		return
-
-	_display_vehicle(current_index + 1)
+	_cycle_vehicle(1)
 
 
 func previous_vehicle() -> void:
 
-	if vehicle_scenes.is_empty():
+	_cycle_vehicle(-1)
+
+
+func _cycle_vehicle(direction: int) -> void:
+
+	var valid_indices := _get_valid_vehicle_indices()
+
+	if valid_indices.size() <= 1:
 		return
 
-	_display_vehicle(current_index - 1)
+	var position := valid_indices.find(current_index)
+
+	if position == -1:
+		position = 0
+
+	position = posmod(
+		position + direction,
+		valid_indices.size()
+	)
+
+	_display_vehicle(valid_indices[position])
 
 
 # =========================================
@@ -104,10 +185,13 @@ func previous_vehicle() -> void:
 
 func _display_vehicle(index: int) -> void:
 
-	if vehicle_scenes.is_empty():
+	if index < 0 or index >= vehicle_scenes.size():
 		return
 
-	current_index = wrapi(index, 0, vehicle_scenes.size())
+	if vehicle_scenes[index] == null:
+		return
+
+	current_index = index
 
 	transition_id += 1
 	var request_id := transition_id
@@ -126,15 +210,24 @@ func _display_vehicle(index: int) -> void:
 		transition_tween.set_ease(Tween.EASE_IN)
 
 		transition_tween.tween_property(
-			car_view, "modulate:a", 0.0, fade_out_time
+			car_view,
+			"modulate:a",
+			0.0,
+			fade_out_time
 		)
 
 		transition_tween.tween_property(
-			info_panel, "modulate:a", 0.0, fade_out_time
+			info_panel,
+			"modulate:a",
+			0.0,
+			fade_out_time
 		)
 
 		transition_tween.tween_property(
-			brand_panel, "modulate:a", 0.0, fade_out_time
+			brand_panel,
+			"modulate:a",
+			0.0,
+			fade_out_time
 		)
 
 		transition_tween.tween_property(
@@ -152,12 +245,12 @@ func _display_vehicle(index: int) -> void:
 		)
 
 		transition_tween.chain().tween_callback(
-			_install_vehicle.bind(current_index, request_id)
+			_install_vehicle.bind(index, request_id)
 		)
 
 	else:
 
-		_install_vehicle(current_index, request_id)
+		_install_vehicle(index, request_id)
 
 
 # =========================================
@@ -169,12 +262,16 @@ func _install_vehicle(index: int, request_id: int) -> void:
 	if request_id != transition_id:
 		return
 
+	if index < 0 or index >= vehicle_scenes.size():
+		return
+
+	if vehicle_scenes[index] == null:
+		return
+
 	# Eliminar vehículo anterior.
 	if is_instance_valid(current_car):
 
-		car_holder.remove_child(current_car)
 		current_car.queue_free()
-
 		current_car = null
 
 	# Crear vehículo nuevo.
@@ -189,7 +286,18 @@ func _install_vehicle(index: int, request_id: int) -> void:
 
 	car_holder.add_child(current_car)
 
-	# Actualizar información.
+	# =====================================
+	# AJUSTE INDIVIDUAL DE ALTURA
+	# =====================================
+
+	if index < vehicle_vertical_offsets.size():
+
+		current_car.position.y += vehicle_vertical_offsets[index]
+
+	# =====================================
+	# ACTUALIZAR INFORMACIÓN
+	# =====================================
+
 	name_label.text = vehicle_names[index] \
 		if index < vehicle_names.size() else "Vehículo"
 
@@ -277,4 +385,58 @@ func _play_intro() -> void:
 		"position",
 		brand_home_position,
 		fade_in_time
+	)
+
+
+# =========================================
+# ANIMACIÓN DE FLECHAS
+# =========================================
+
+func _on_arrow_button_down(button: Button) -> void:
+
+	_animate_arrow(button, true)
+
+
+func _on_arrow_button_up(button: Button) -> void:
+
+	_animate_arrow(button, false)
+
+
+func _animate_arrow(button: Button, lifted: bool) -> void:
+
+	# Interrumpir animación anterior de esta flecha.
+	if button_tweens.has(button):
+
+		var old_tween: Tween = button_tweens[button]
+
+		if old_tween.is_running():
+			old_tween.kill()
+
+	# Obtener posición original.
+	var home_position: Vector2
+
+	if button == previous_button:
+		home_position = previous_home_position
+	else:
+		home_position = next_home_position
+
+	# Calcular posición de destino.
+	var target_position := home_position
+
+	if lifted:
+		target_position.y -= arrow_lift_distance
+
+	# Crear animación.
+	var tween := create_tween()
+
+	button_tweens[button] = tween
+
+	tween.set_trans(Tween.TRANS_CUBIC)
+	tween.set_ease(Tween.EASE_OUT)
+
+	tween.tween_property(
+		button,
+		"position",
+		target_position,
+		arrow_animation_duration
 	)
