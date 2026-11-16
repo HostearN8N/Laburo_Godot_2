@@ -87,7 +87,8 @@ var brand_home_position: Vector2
 # =========================================
 
 func _ready() -> void:
-
+	previous_button.focus_mode = Control.FOCUS_NONE
+	next_button.focus_mode = Control.FOCUS_NONE
 	info_home_position = info_panel.position
 	brand_home_position = brand_panel.position
 
@@ -440,3 +441,45 @@ func _animate_arrow(button: Button, lifted: bool) -> void:
 		target_position,
 		arrow_animation_duration
 	)
+# Arreglo con las rutas exactas de las escenas jugables (.tscn) de cada auto en el mismo orden del carrusel
+var rutas_autos: Array[String] = [
+	"res://autos/Fiat_500_Abarth.tscn",
+	"res://autos/Mini_Cooper_S.tscn",
+	"res://autos/Ford_Fiesta_ST.tscn",
+	"res://autos/Bmw 128i.tscn",
+	"res://autos/Porsche_911.tscn",
+	"res://autos/Mercedes_C63.tscn",
+	"res://autos/Aston_Martin.tscn"
+]
+
+# =========================================
+# SELECCIÓN DE AUTO (ENTER)
+# =========================================
+
+var rutas_autos_jugables: Array[String] = [
+	"res://escenas_autos/Fiat_500.tscn", # <-- Verifica el nombre exacto de tu Fiat 500 en esa carpeta
+	"res://escenas_autos/Mini Cooper S.tscn",
+	"res://escenas_autos/Ford Fiesta ST.tscn",       # <-- Verifica el nombre exacto en esa carpeta
+	"res://escenas_autos/Bmw 128i.tscn",
+	"res://escenas_autos/Porsche GT3 RS.tscn",  # <-- Verifica el nombre exacto en esa carpeta
+	"res://escenas_autos/Mercedes Benz.tscn",   # <-- Verifica el nombre exacto en esa carpeta
+	"res://escenas_autos/Aston Martin.tscn"     # <-- Verifica el nombre exacto en esa carpeta
+]
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER:
+			seleccionar_auto_actual()
+			get_viewport().set_input_as_handled()
+
+
+func seleccionar_auto_actual() -> void:
+	if current_index < 0 or current_index >= rutas_autos_jugables.size():
+		push_warning("No hay una ruta jugable configurada para el índice: ", current_index)
+		return
+	
+	Global.auto_seleccionado_path = rutas_autos_jugables[current_index]
+	print("Auto guardado con Enter: ", Global.auto_seleccionado_path)
+	
+	# Descomenta y pon la ruta de tu menú/garaje si quieres volver automáticamente:
+	# get_tree().change_scene_to_file("res://escenas/menu_principal.tscn")
