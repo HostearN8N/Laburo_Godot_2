@@ -5,7 +5,7 @@ signal carrera_terminada
 
 @export var vueltas_totales: int = 3
 
-var vuelta_actual: int = 0   # 0 = la cDarrera aún no empezó
+var vuelta_actual: int = 0    # 0 = la carrera aún no empezó
 var terminada: bool = false
 
 func _ready() -> void:
@@ -16,12 +16,12 @@ func _on_body_entered(body: Node3D) -> void:
 	if terminada or not body.is_in_group("jugador"):
 		return
 
-	# Ignorar si cruza en sentido contrario
+	# Ignorar solo si cruza claramente en sentido contrario
 	var coche := body as RigidBody3D
 	if coche == null:
 		return
 	var adelante: Vector3 = -global_transform.basis.z
-	if coche.linear_velocity.dot(adelante) <= 0.0:
+	if coche.linear_velocity.dot(adelante) < -1.0:
 		return
 
 	if vuelta_actual == 0:
@@ -36,5 +36,6 @@ func _on_body_entered(body: Node3D) -> void:
 
 	vuelta_cambiada.emit(vuelta_actual, vueltas_totales)
 	print("Vuelta ", vuelta_actual, " / ", vueltas_totales)
+
 func _enter_tree() -> void:
 	add_to_group("linea_meta")
