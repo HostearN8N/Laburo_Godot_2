@@ -12,7 +12,7 @@ func _ready() -> void:
 		push_error("NO SE ENCONTRÓ 'Fiat_500_Abarth10' en la pista. Revisa el nombre exacto del nodo del jugador.")
 		return
 		
-	if Global.auto_seleccionado_path == "" or Global.auto_seleccionado_path == "res://fiat_500_abarth.tscn":
+	if Global.auto_seleccionado_path == "" or Global.auto_seleccionado_path == "res://Autos/fiat_500_abarth.tscn":
 		print("Se usa el Fiat 500 por defecto.")
 		return
 

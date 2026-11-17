@@ -52,10 +52,6 @@ func _ready() -> void:
 	if texture_semaforo and imagen_paso_1:
 		texture_semaforo.visible = true
 		texture_semaforo.texture = imagen_paso_1
-	# Mostrar la primera imagen del semáforo apenas carga la carrera
-	if texture_semaforo and imagen_paso_1:
-		texture_semaforo.visible = true
-		texture_semaforo.texture = imagen_paso_1
 
 	# Conectar con la línea de meta
 	var meta := get_tree().get_first_node_in_group("linea_meta")
@@ -113,8 +109,11 @@ func _update_timer(delta: float) -> void:
 	label_timer.text = "%02d:%02d:%02d" % [minutes, seconds, msecs]
 
 func _update_vehicle_hud() -> void:
-	if not vehicle:
-		return
+	# Si el auto fue reemplazado por el del concesionario, buscamos el nuevo en el grupo "jugador"
+	if not is_instance_valid(vehicle) or not vehicle.is_in_group("jugador"):
+		vehicle = get_tree().get_first_node_in_group("jugador") as Node3D
+		if not is_instance_valid(vehicle):
+			return
 
 	# 1. Velocidad
 	var speed_kmh: float = 0.0

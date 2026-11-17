@@ -13,8 +13,8 @@ const SHIFT_TIME := 0.5           # segundos sin tracción durante el cambio
 const BRAKE_POWER := 20.0         # fuerza de freno
 
 @onready var camera_pivot = $CameraPivot
-@onready var camera_3d = $CameraPivot/Camera3D
-@onready var reverse_camera = $CameraPivot/Camera3D2
+@onready var camera_3d = $CameraPivot/camera_3d
+@onready var reverse_camera = $CameraPivot/reverse_camera
 
 var target_look_at: Vector3 = Vector3.ZERO
 var current_gear := 1     # -1 = reversa, 1 a 5 = marchas

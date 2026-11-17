@@ -36,8 +36,8 @@ const NOSE_IS_PLUS_Z := true          # este auto avanza hacia +Z (por eso la c√
 const DEBUG_CONTRAMANO := true        # imprime los datos cada vez que se activa el contramano (poner en false al terminar)
 
 @onready var camera_pivot = $Camera_Pivot
-@onready var camera_3d = $Camera_Pivot/Camera3D
-@onready var reverse_camera = $Camera_Pivot/Reverse_camera
+@onready var camera_3d = $Camera_Pivot/camera3D
+@onready var reverse_camera = $Camera_Pivot/reverse_camera
 
 var target_look_at: Vector3 = Vector3.ZERO
 var current_gear := 1     # -1 = reversa, 1 a 5 = marchas

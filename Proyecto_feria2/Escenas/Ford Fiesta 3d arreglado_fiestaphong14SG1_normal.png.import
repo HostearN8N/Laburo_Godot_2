@@ -1,0 +1,44 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://dkambrqwxbjkn"
+path.s3tc="res://.godot/imported/Ford Fiesta 3d arreglado_fiestaphong14SG1_normal.png-041ae11cfcb54018fc2e1ed6a82539a7.s3tc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
+generator_parameters={
+"md5": "bf5685bd8950118c6afff5584b7d6cdc"
+}
+
+[deps]
+
+source_file="res://Escenas/Ford Fiesta 3d arreglado_fiestaphong14SG1_normal.png"
+dest_files=["res://.godot/imported/Ford Fiesta 3d arreglado_fiestaphong14SG1_normal.png-041ae11cfcb54018fc2e1ed6a82539a7.s3tc.ctex"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
+compress/hdr_compression=1
+compress/normal_map=1
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=1
+roughness/src_normal="res://Escenas/Ford Fiesta 3d arreglado_fiestaphong14SG1_normal.png"
+process/channel_remap/red=0
+process/channel_remap/green=1
+process/channel_remap/blue=2
+process/channel_remap/alpha=3
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0

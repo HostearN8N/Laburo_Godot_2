@@ -443,13 +443,11 @@ func _animate_arrow(button: Button, lifted: bool) -> void:
 	)
 # Arreglo con las rutas exactas de las escenas jugables (.tscn) de cada auto en el mismo orden del carrusel
 var rutas_autos: Array[String] = [
-	"res://autos/Fiat_500_Abarth.tscn",
-	"res://autos/Mini_Cooper_S.tscn",
-	"res://autos/Ford_Fiesta_ST.tscn",
-	"res://autos/Bmw 128i.tscn",
-	"res://autos/Porsche_911.tscn",
-	"res://autos/Mercedes_C63.tscn",
-	"res://autos/Aston_Martin.tscn"
+	"res://Autos/fiat_500_abarth.tscn",
+	"res://escenas_autos/Mini Cooper S.tscn",
+	"res://escenas_autos/Ford Fiesta ST.tscn",
+	"res://escenas_autos/Bmw 128i.tscn",
+	"res://Autos/golf gti.tscn",
 ]
 
 # =========================================
@@ -457,13 +455,11 @@ var rutas_autos: Array[String] = [
 # =========================================
 
 var rutas_autos_jugables: Array[String] = [
-	"res://escenas_autos/Fiat_500.tscn", # <-- Verifica el nombre exacto de tu Fiat 500 en esa carpeta
+	"res://Autos/fiat_500_abarth.tscn", # <-- Verifica el nombre exacto de tu Fiat 500 en esa carpeta
 	"res://escenas_autos/Mini Cooper S.tscn",
 	"res://escenas_autos/Ford Fiesta ST.tscn",       # <-- Verifica el nombre exacto en esa carpeta
 	"res://escenas_autos/Bmw 128i.tscn",
-	"res://escenas_autos/Porsche GT3 RS.tscn",  # <-- Verifica el nombre exacto en esa carpeta
-	"res://escenas_autos/Mercedes Benz.tscn",   # <-- Verifica el nombre exacto en esa carpeta
-	"res://escenas_autos/Aston Martin.tscn"     # <-- Verifica el nombre exacto en esa carpeta
+	"res://Autos/golf gti.tscn",
 ]
 
 func _input(event: InputEvent) -> void:
