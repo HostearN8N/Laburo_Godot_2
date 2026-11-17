@@ -38,7 +38,7 @@ const DEBUG_CONTRAMANO := true        # imprime los datos cada vez que se activa
 @onready var camera_pivot = $Camera_Pivot
 @onready var camera_3d = $Camera_Pivot/camera3D
 @onready var reverse_camera = $Camera_Pivot/reverse_camera
-
+var target_look_at: Vector3 = Vector3.ZERO
 var current_gear := 1     # -1 = reversa, 1 a 6 = marchas
 var speed_kmh := 0.0
 var shift_timer := 0.0
@@ -125,8 +125,13 @@ func _physics_process(delta: float) -> void:
 		_reset_orientation()
 
 	# Sigue suavemente la posición y rotación del auto sin forzar el ángulo de las cámaras
+	# Cámara estilo Fiat: el pivote sigue al auto con retraso y las cámaras miran hacia donde va
 	camera_pivot.global_position = camera_pivot.global_position.lerp(global_position, delta * 20.0)
-	camera_pivot.global_rotation.y = lerp_angle(camera_pivot.global_rotation.y, global_rotation.y, delta * 6.0)
+	camera_pivot.global_transform = camera_pivot.global_transform.interpolate_with(global_transform.orthonormalized(), delta * 5.0)
+
+	target_look_at = target_look_at.lerp(global_position + linear_velocity, delta * 5.0)
+	camera_3d.look_at(target_look_at)
+	reverse_camera.look_at(target_look_at)
 
 	_check_camera_switch()
 
@@ -246,7 +251,8 @@ func _reset_orientation(nose_dir := Vector3.ZERO) -> void:
 	angular_velocity = Vector3.ZERO
 	
 	global_transform = Transform3D(Basis.looking_at(look, Vector3.UP), pos)
-
+	camera_pivot.global_transform = global_transform.orthonormalized()
+	target_look_at = global_position
 func _update_gearbox(delta: float, throttle: float) -> void:
 	speed_kmh = linear_velocity.length() * 3.6
 	shift_timer = maxf(shift_timer - delta, 0.0)
