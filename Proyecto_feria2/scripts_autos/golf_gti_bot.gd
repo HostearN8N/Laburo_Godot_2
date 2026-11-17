@@ -15,9 +15,9 @@ extends VehicleBody3D
 @export_group("Motor")
 
 @export var engine_power: float = 10900.0
-@export var brake_power: float = 120.0
-@export var max_speed: float = 170.0
-@export var corner_speed: float = 50.0
+@export var brake_power: float = 51.0
+@export var max_speed: float = 150.0
+@export var corner_speed: float = 60.0
 
 # Segundos que tarda la fuerza en pasar de 0 a engine_power (en carrera)
 # y en volver a 0 al soltar el acelerador.
@@ -38,10 +38,40 @@ extends VehicleBody3D
 @export_group("Direccion")
 
 @export var wheelbase: float = 2.4
-@export var max_steer: float = 0.45
+@export var max_steer: float = 0.36
 @export var lookahead_distance: float = 14.0
-@export var steering_response: float = 2.5
+@export var steering_response: float = 2.0
 @export var invert_steering: bool = false
+
+# Metros extra de anticipacion por cada m/s de velocidad.
+# 0 = distancia fija (comportamiento original). Con autos rapidos que zigzaguean
+# en las rectas conviene probar entre 0.1 y 0.2.
+@export var lookahead_speed_gain: float = 0.15
+
+
+# =========================================
+# ANTICIPACION DE CURVAS
+# =========================================
+
+@export_group("Anticipacion de curvas")
+
+# Frena ANTES de las curvas para llegar con la velocidad que les corresponde
+# (la misma formula de corner_speed / max_speed, pero mirando mas adelante).
+@export var curve_anticipation_enabled: bool = true
+
+# Desaceleracion (m/s2) que se supone que el auto logra al frenar para una curva.
+# Mas alto = frena mas tarde. Si el auto sigue llegando muy rapido a las curvas,
+# baja este valor.
+@export var corner_brake_decel: float = 4.5
+
+# Distancia maxima (m) hacia adelante que se analiza.
+@export var curve_look_horizon: float = 200.0
+
+# Separacion (m) entre los puntos analizados del circuito.
+@export var curve_sample_step: float = 4.0
+
+var curve_factor_table: PackedFloat32Array = PackedFloat32Array()
+var curve_table_ready: bool = false
 
 
 # =========================================
@@ -111,7 +141,7 @@ var grid_offset_captured: bool = false
 @export var emergency_gap_distance: float = 2.0
 @export var emergency_ttc: float = 0.45
 # Freno maximo ante obstaculos (tiene que ser mayor que brake_power).
-@export var obstacle_brake_power: float = 65.0
+@export var obstacle_brake_power: float = 79.0
 
 var avoidance_offset: float = 0.0
 var active_avoidance_side: float = 0.0
@@ -215,8 +245,13 @@ var puede_conducir: bool = false
 func _ready() -> void:
 	add_to_group("bots")
 
+	# Si el PathFollow3D no esta asignado (por ejemplo porque se cambio el
+	# script del nodo y se borraron sus valores), usa el de la escena.
 	if path_follow == null:
-		push_error("AI: No se asigno PathFollow3D.")
+		path_follow = _find_default_path_follow()
+
+	if path_follow == null:
+		push_error("AI: No se asigno PathFollow3D en '%s'." % name)
 
 	# Evita que el auto se "duerma" en la grilla y el motor no lo despierte.
 	can_sleep = false
@@ -236,6 +271,21 @@ func _ready() -> void:
 		
 	# Congela las físicas al iniciar para que no resbale en la inclinación de la pista
 	freeze = true
+
+
+# Primer PathFollow3D de la escena que cuelgue de un Path3D. El bot solo lo usa
+# para llegar al Path3D del circuito.
+func _find_default_path_follow() -> PathFollow3D:
+
+	var found: Array[Node] = get_tree().root.find_children("*", "PathFollow3D", true, false)
+
+	for node in found:
+		var candidate := node as PathFollow3D
+
+		if candidate != null and candidate.get_parent() is Path3D:
+			return candidate
+
+	return null
 
 
 func _capture_starting_grid_offset(path: Path3D, curve: Curve3D) -> void:
@@ -286,6 +336,9 @@ func _physics_process(delta: float) -> void:
 
 		if not grid_offset_captured:
 			_capture_starting_grid_offset(path, curve)
+
+		if curve_anticipation_enabled and not curve_table_ready:
+			_build_curve_table(path, curve, path_length)
 
 
 		# 2. Calcular velocidad.
@@ -375,7 +428,9 @@ func _physics_process(delta: float) -> void:
 
 		# 8. Anticipacion.
 
-		var active_lookahead: float = lookahead_distance
+		var active_lookahead: float = (
+			lookahead_distance + lookahead_speed_gain * absf(forward_speed)
+		)
 
 		if recovery_active:
 			active_lookahead = recovery_lookahead_distance
@@ -491,6 +546,17 @@ func _physics_process(delta: float) -> void:
 
 		var desired_speed: float = lerpf(max_speed, corner_speed, curve_factor)
 
+		# Anticipacion: limita la velocidad para poder frenar a tiempo antes
+		# de las curvas que vienen. Solo puede BAJAR la velocidad objetivo.
+		var anticipated_limit: float = _get_anticipated_speed_limit(
+			current_offset,
+			path_length,
+			curve,
+			absf(forward_speed)
+		)
+		var curve_braking: bool = anticipated_limit < desired_speed
+		desired_speed = minf(desired_speed, anticipated_limit)
+
 		# Salida: el limite se libera gradualmente.
 		desired_speed = minf(
 			desired_speed,
@@ -587,7 +653,7 @@ func _physics_process(delta: float) -> void:
 
 		elif speed_kmh > desired_speed + 2.0:
 
-			debug_state = "FRENANDO"
+			debug_state = "FRENANDO (curva)" if curve_braking else "FRENANDO"
 			target_brake = brake_power
 
 			if obstacle_limited:
@@ -666,6 +732,123 @@ func _get_path_forward(
 
 	direction.y = 0.0
 	return direction.normalized()
+
+
+# =========================================
+# ANTICIPACION DE CURVAS
+# =========================================
+
+func _wrap_path_offset(offset: float, path_length: float, closed: bool) -> float:
+
+	if closed:
+		return fposmod(offset, path_length)
+
+	return clampf(offset, 0.0, path_length)
+
+
+# Arma (una sola vez) una tabla con el "factor de curva" (0 = recta,
+# 1 = curva cerrada) cada curve_sample_step metros del circuito. Usa la misma
+# formula que la velocidad objetivo: angulo entre la direccion del circuito y
+# el punto que esta lookahead_distance metros mas adelante.
+func _build_curve_table(path: Path3D, curve: Curve3D, path_length: float) -> void:
+
+	curve_table_ready = true
+	curve_factor_table.clear()
+
+	var step: float = maxf(curve_sample_step, 0.5)
+	var count: int = int(ceil(path_length / step)) + 1
+	var closed: bool = curve.closed
+	var tangent_step: float = minf(2.0, maxf(path_length * 0.01, 0.25))
+
+	curve_factor_table.resize(count)
+
+	for i in range(count):
+
+		var offset: float = float(i) * step
+
+		var point: Vector3 = path.to_global(
+			curve.sample_baked(_wrap_path_offset(offset, path_length, closed))
+		)
+		var before: Vector3 = path.to_global(
+			curve.sample_baked(_wrap_path_offset(offset - tangent_step, path_length, closed))
+		)
+		var after: Vector3 = path.to_global(
+			curve.sample_baked(_wrap_path_offset(offset + tangent_step, path_length, closed))
+		)
+		var ahead: Vector3 = path.to_global(
+			curve.sample_baked(_wrap_path_offset(offset + lookahead_distance, path_length, closed))
+		)
+
+		var tangent: Vector3 = after - before
+		tangent.y = 0.0
+
+		var chord: Vector3 = ahead - point
+		chord.y = 0.0
+
+		var factor: float = 0.0
+
+		if tangent.length_squared() > 0.0001 and chord.length_squared() > 0.0001:
+			factor = clampf(
+				tangent.angle_to(chord) / deg_to_rad(45.0),
+				0.0,
+				1.0
+			)
+
+		curve_factor_table[i] = factor
+
+
+# Velocidad maxima (km/h) a la que se puede ir ahora para poder frenar hasta
+# la velocidad objetivo de cada punto de adelante con corner_brake_decel.
+# Devuelve INF si no hay nada que limitar.
+func _get_anticipated_speed_limit(
+	current_offset: float,
+	path_length: float,
+	curve: Curve3D,
+	speed_ms: float
+) -> float:
+
+	if not curve_anticipation_enabled or curve_factor_table.size() < 2:
+		return INF
+
+	var step: float = maxf(curve_sample_step, 0.5)
+	var decel: float = maxf(corner_brake_decel, 0.5)
+	var slowest_ms: float = minf(max_speed, corner_speed) / 3.6
+
+	# Distancia necesaria para frenar desde la velocidad actual hasta la mas
+	# lenta posible, mas un margen.
+	var horizon: float = 20.0
+
+	if speed_ms > slowest_ms:
+		horizon += (speed_ms * speed_ms - slowest_ms * slowest_ms) / (2.0 * decel)
+
+	horizon = minf(horizon, curve_look_horizon)
+
+	var closed: bool = curve.closed
+	var count: int = curve_factor_table.size()
+	var first_index: int = int(ceil(current_offset / step))
+	var steps: int = int(ceil(horizon / step))
+	var limit_ms: float = INF
+
+	for k in range(steps + 1):
+
+		var unwrapped_index: int = first_index + k
+		var sample_offset: float = float(unwrapped_index) * step
+		var index: int = unwrapped_index
+
+		if closed:
+			index = posmod(unwrapped_index, count - 1)
+		else:
+			if sample_offset > path_length:
+				break
+
+			index = mini(index, count - 1)
+
+		var target_ms: float = lerpf(max_speed, corner_speed, curve_factor_table[index]) / 3.6
+		var distance: float = maxf(sample_offset - current_offset, 0.0)
+
+		limit_ms = minf(limit_ms, sqrt(target_ms * target_ms + 2.0 * decel * distance))
+
+	return limit_ms * 3.6
 
 
 # =========================================
