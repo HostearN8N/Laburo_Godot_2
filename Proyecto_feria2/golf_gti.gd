@@ -1,7 +1,7 @@
 extends VehicleBody3D
 
 const MAX_STEER = 0.45
-const ENGINE_POWER = 11200.0
+const ENGINE_POWER = 10900.0
 
 const GEAR_MAX_SPEED: Array[float] = [56.0, 96.0, 140.0, 184.0, 222.0, 245.0, 252.0]  # km/h máx. de 1ª a 7ª
 const GEAR_TORQUE: Array[float] = [1.05, 0.88, 0.72, 0.58, 0.46, 0.36, 0.28]         # par lleno de 2.0 turbo (370 Nm)

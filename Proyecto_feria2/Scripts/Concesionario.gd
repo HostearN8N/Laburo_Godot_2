@@ -444,9 +444,9 @@ func _animate_arrow(button: Button, lifted: bool) -> void:
 # Arreglo con las rutas exactas de las escenas jugables (.tscn) de cada auto en el mismo orden del carrusel
 var rutas_autos: Array[String] = [
 	"res://Autos/fiat_500_abarth.tscn",
-	"res://escenas_autos/Mini Cooper S.tscn",
-	"res://escenas_autos/Ford Fiesta ST.tscn",
-	"res://escenas_autos/Bmw 128i.tscn",
+	"res://Autos/Mini Cooper S.tscn",
+	"res://Autos/Ford Fiesta ST.tscn",
+	"res://Autos/Bmw 128i.tscn",
 	"res://Autos/golf gti.tscn",
 ]
 
@@ -456,9 +456,9 @@ var rutas_autos: Array[String] = [
 
 var rutas_autos_jugables: Array[String] = [
 	"res://Autos/fiat_500_abarth.tscn", # <-- Verifica el nombre exacto de tu Fiat 500 en esa carpeta
-	"res://escenas_autos/Mini Cooper S.tscn",
-	"res://escenas_autos/Ford Fiesta ST.tscn",       # <-- Verifica el nombre exacto en esa carpeta
-	"res://escenas_autos/Bmw 128i.tscn",
+	"res://Autos/Mini Cooper S.tscn",
+	"res://Autos/Ford Fiesta ST.tscn",       # <-- Verifica el nombre exacto en esa carpeta
+	"res://Autos/Bmw 128i.tscn",
 	"res://Autos/golf gti.tscn",
 ]
 
